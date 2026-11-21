@@ -59,6 +59,7 @@ export default function Confirmation({ bookingId, mock, onDone }) {
         <p>{paid ? 'Show this pass in Hippity Hop to see every ticket for your trip.' : 'Your bank is still confirming. This page updates by itself.'}</p>
       </div>
       <Pass booking={booking} />
+      {paid && <WalletButtons />}
       <TicketWallet booking={booking} showStatus={paid} />
     </Shell>
   )
@@ -86,6 +87,46 @@ function Pass({ booking }) {
     </article>
   )
 }
+
+// Add the pass to Apple or Google Wallet. Not wired up yet: a tap only says it's coming.
+function WalletButtons() {
+  const [note, setNote] = useState(null)
+  const add = (name) => setNote(`Adding to ${name} is coming soon. Your pass is saved in Hippity Hop.`)
+  return (
+    <div className="cf-wallet">
+      <div className="cf-wallet-btns">
+        <button type="button" className="wallet-btn" onClick={() => add('Apple Wallet')}>
+          <AppleGlyph />
+          <span><small>Add to</small>Apple Wallet</span>
+        </button>
+        <button type="button" className="wallet-btn" onClick={() => add('Google Wallet')}>
+          <GoogleGlyph />
+          <span><small>Add to</small>Google Wallet</span>
+        </button>
+      </div>
+      {note && <p className="cf-wallet-note" role="status">{note}</p>}
+    </div>
+  )
+}
+
+// Simple stacked-card wallet glyphs, not the platforms' official badge artwork.
+const AppleGlyph = () => (
+  <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+    <rect x="3" y="4" width="18" height="16" rx="3" fill="#fff" />
+    <rect x="3" y="4" width="18" height="5" rx="2" fill="#2DA9F5" />
+    <rect x="3" y="7.5" width="18" height="5" rx="2" fill="#FDB52B" />
+    <rect x="3" y="11" width="18" height="5" rx="2" fill="#FC3158" />
+    <path d="M3 14h5.5a3.5 3.5 0 0 0 7 0H21v3a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3z" fill="#E9E9EB" />
+  </svg>
+)
+const GoogleGlyph = () => (
+  <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+    <rect x="3" y="4" width="18" height="7" rx="2.5" fill="#EA4335" />
+    <rect x="3" y="7.5" width="18" height="7" rx="2.5" fill="#FBBC04" />
+    <rect x="3" y="11" width="18" height="7" rx="2.5" fill="#34A853" />
+    <rect x="3" y="14" width="18" height="6" rx="2.5" fill="#4285F4" />
+  </svg>
+)
 
 // A QR-style code drawn from the booking id. Placeholder until the app has real pass links.
 function QR({ value, size = 25 }) {

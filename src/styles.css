@@ -1462,6 +1462,7 @@ button.ghost:hover { background: var(--ink); color: var(--hh-cream); }
 .tw-track {
   display: flex; gap: 14px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none;
   margin: 0 -16px; padding: 4px 16px 10px; scroll-padding: 0 16px; overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch; touch-action: pan-x pan-y;
 }
 .tw-track::-webkit-scrollbar { display: none; }
 .tw-track:focus-visible { outline: 2px solid var(--teal); outline-offset: -2px; border-radius: 12px; }
@@ -1503,9 +1504,9 @@ button.ghost:hover { background: var(--ink); color: var(--hh-cream); }
 .rt-num small { font-family: var(--hh-font-body); font-size: 13px; font-weight: 700; color: var(--muted); }
 .rt-ref { font-size: 10px; font-weight: 800; letter-spacing: .06em; color: var(--muted); word-break: break-all; }
 
-/* Add to Apple / Google Wallet: black wallet-style buttons under each ticket */
-.tw-wallet { display: flex; flex-direction: column; gap: 6px; }
-.tw-wallet-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+/* Add to Apple / Google Wallet: black wallet-style buttons under the pass */
+.cf-wallet { display: flex; flex-direction: column; gap: 6px; margin-top: -4px; }
+.cf-wallet-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .wallet-btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 46px;
   background: #000; color: #fff; border: var(--outline); border-radius: 12px; padding: 6px 10px;
@@ -1519,11 +1520,11 @@ button.ghost:hover { background: var(--ink); color: var(--hh-cream); }
 .wallet-btn:active:not(:disabled) { transform: translate(1px, 1px); box-shadow: none; }
 .wallet-btn:disabled { opacity: .6; cursor: progress; }
 .wallet-btn:focus-visible { outline: 2px solid var(--hh-lime); outline-offset: 2px; }
-.tw-wallet-err { margin: 0; font-size: 12px; font-weight: 600; color: #8a1f17; line-height: 1.4; }
+.cf-wallet-note { margin: 0; font-size: 13px; font-weight: 600; color: var(--muted); text-align: center; line-height: 1.4; }
 
 @media (max-width: 380px) {
   .tw-slide { flex-basis: 92%; }
   .rt-stub { width: 76px; }
   .rt-end strong { font-size: 20px; }
-  .tw-wallet-btns { grid-template-columns: 1fr; }
+  .cf-wallet-btns { grid-template-columns: 1fr; }
 }

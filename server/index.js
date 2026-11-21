@@ -10,7 +10,6 @@ import { STATIONS } from '../src/data.js'
 import { OPTIONS, DEPARTURE_TIMES, NIGHT_TRAIN } from '../src/trip.js'
 import { cleanPasses } from '../src/passes.js'
 import { getBooking, saveBooking, findByPaymentIntent } from './store.js'
-import { googleSaveUrl, applePass, WalletError } from './wallet.js'
 
 const PORT = Number(process.env.API_PORT ?? 8787)
 const { STRIPE_SECRET_KEY, STRIPE_PUBLISHABLE_KEY, STRIPE_WEBHOOK_SECRET } = process.env
@@ -113,27 +112,6 @@ app.get('/api/bookings/:id', async (req, res) => {
     }
   }
   res.json(publicBooking(booking))
-})
-
-// Add one train ride to Apple Wallet (.pkpass file) or Google Wallet (a save link).
-app.get('/api/bookings/:id/legs/:leg/wallet/:kind', async (req, res) => {
-  const booking = await getBooking(req.params.id)
-  if (!booking) return res.status(404).json({ error: 'Booking not found' })
-  if (booking.status !== 'paid') return res.status(409).json({ error: 'Wallet passes are ready once the payment is through.' })
-  const leg = Number(req.params.leg)
-  try {
-    if (req.params.kind === 'google') return res.json({ url: googleSaveUrl(booking, leg) })
-    if (req.params.kind === 'apple') {
-      const file = await applePass(booking, leg)
-      res.set({ 'Content-Type': 'application/vnd.apple.pkpass', 'Content-Disposition': `attachment; filename="${booking.id}-${leg + 1}.pkpass"` })
-      return res.send(file)
-    }
-    res.status(404).json({ error: 'Unknown wallet.' })
-  } catch (err) {
-    if (err instanceof WalletError) return res.status(err.status).json({ error: err.message })
-    console.error('Wallet pass error', err)
-    res.status(500).json({ error: 'Could not create the wallet pass.' })
-  }
 })
 
 // ---------- helpers ----------

@@ -1,6 +1,5 @@
 // After payment: one horizontal ticket per train ride (per destination), side by side.
-// Swipe, use the arrows or tap a city to move through the trip, and add each ride to
-// Apple or Google Wallet.
+// Swipe, use the arrows or tap a city to move through the trip.
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { OPERATORS } from './tickets.js'
 import { fmtTime } from './trip.js'
@@ -24,7 +23,10 @@ export default function TicketWallet({ booking, showStatus = true }) {
   useEffect(() => {
     const el = track.current
     if (!el) return
-    const onScroll = () => {
+    // Measured once per frame, so swiping stays smooth on phones.
+    let frame = 0
+    const measure = () => {
+      frame = 0
       const mid = el.scrollLeft + el.clientWidth / 2
       let best = 0
       let bestDist = Infinity
@@ -34,8 +36,12 @@ export default function TicketWallet({ booking, showStatus = true }) {
       })
       setActive(best)
     }
+    const onScroll = () => { if (!frame) frame = requestAnimationFrame(measure) }
     el.addEventListener('scroll', onScroll, { passive: true })
-    return () => el.removeEventListener('scroll', onScroll)
+    return () => {
+      el.removeEventListener('scroll', onScroll)
+      cancelAnimationFrame(frame)
+    }
   }, [])
 
   const go = (i) => {
@@ -75,7 +81,6 @@ export default function TicketWallet({ booking, showStatus = true }) {
         {rides.map((tickets, i) => (
           <div className="tw-slide" key={i} aria-roledescription="slide" aria-label={`Train ${i + 1} of ${rides.length}`}>
             <RideTicket tickets={tickets} booking={booking} index={i} count={rides.length} showStatus={showStatus} />
-            {showStatus && <WalletButtons booking={booking} leg={tickets[0].legIndex} />}
           </div>
         ))}
       </div>
@@ -134,72 +139,3 @@ function RideTicket({ tickets, booking, index, count, showStatus }) {
     </article>
   )
 }
-
-// Apple Wallet gets a .pkpass file; Google Wallet opens its "save" page.
-function WalletButtons({ booking, leg }) {
-  const [busy, setBusy] = useState(null)
-  const [error, setError] = useState(null)
-
-  const add = async (kind) => {
-    setError(null)
-    if (booking.id.startsWith('EU-MOCK')) {
-      setError('This is a demo booking, so there is no wallet pass to add.')
-      return
-    }
-    setBusy(kind)
-    try {
-      const res = await fetch(`/api/bookings/${encodeURIComponent(booking.id)}/legs/${leg}/wallet/${kind}`)
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? 'Could not create the wallet pass.')
-      if (kind === 'google') {
-        const { url } = await res.json()
-        window.open(url, '_blank', 'noopener')
-      } else {
-        const blob = await res.blob()
-        const a = document.createElement('a')
-        a.href = URL.createObjectURL(blob)
-        a.download = `${booking.id}-train-${leg + 1}.pkpass`
-        a.click()
-        setTimeout(() => URL.revokeObjectURL(a.href), 1000)
-      }
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setBusy(null)
-    }
-  }
-
-  return (
-    <div className="tw-wallet">
-      <div className="tw-wallet-btns">
-        <button className="wallet-btn" onClick={() => add('apple')} disabled={!!busy}>
-          <AppleGlyph />
-          <span><small>Add to</small>Apple Wallet</span>
-        </button>
-        <button className="wallet-btn" onClick={() => add('google')} disabled={!!busy}>
-          <GoogleGlyph />
-          <span><small>Add to</small>Google Wallet</span>
-        </button>
-      </div>
-      {error && <p className="tw-wallet-err" role="alert">{error}</p>}
-    </div>
-  )
-}
-
-// Simple stacked-card wallet glyphs, not the platforms' official badge artwork.
-const AppleGlyph = () => (
-  <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
-    <rect x="3" y="4" width="18" height="16" rx="3" fill="#fff" />
-    <rect x="3" y="4" width="18" height="5" rx="2" fill="#2DA9F5" />
-    <rect x="3" y="7.5" width="18" height="5" rx="2" fill="#FDB52B" />
-    <rect x="3" y="11" width="18" height="5" rx="2" fill="#FC3158" />
-    <path d="M3 14h5.5a3.5 3.5 0 0 0 7 0H21v3a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3z" fill="#E9E9EB" />
-  </svg>
-)
-const GoogleGlyph = () => (
-  <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
-    <rect x="3" y="4" width="18" height="7" rx="2.5" fill="#EA4335" />
-    <rect x="3" y="7.5" width="18" height="7" rx="2.5" fill="#FBBC04" />
-    <rect x="3" y="11" width="18" height="7" rx="2.5" fill="#34A853" />
-    <rect x="3" y="14" width="18" height="6" rx="2.5" fill="#4285F4" />
-  </svg>
-)
