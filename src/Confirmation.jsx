@@ -1,14 +1,18 @@
 import { useEffect, useState } from 'react'
-import { TicketList, PriceBreakdown, OperatorBadge } from './Tickets.jsx'
-import { OPERATORS, money } from './tickets.js'
+import TicketWallet from './TicketWallet.jsx'
 
-// After payment (or when Stripe sends you back from a bank page): what you paid and
-// where each ticket is with its rail company.
-export default function Confirmation({ bookingId, onDone }) {
-  const [booking, setBooking] = useState(null)
+const fmtDate = (iso) => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+
+// After payment (or when Stripe sends you back from a bank page): one Hippity Hop pass for
+// the whole trip, with each train ride as its own ticket underneath (swipe between them).
+// `mock` is a ready-made booking (dev shortcut from the overview), so nothing is fetched.
+export default function Confirmation({ bookingId, mock, onDone }) {
+  const [fetched, setFetched] = useState(null)
   const [error, setError] = useState(null)
+  const booking = mock ?? fetched
 
   useEffect(() => {
+    if (mock) return
     let stop = false
     let timer
     const load = async () => {
@@ -17,7 +21,7 @@ export default function Confirmation({ bookingId, onDone }) {
         const data = await res.json()
         if (!res.ok) throw new Error(data.error ?? 'Could not load your booking.')
         if (stop) return
-        setBooking(data)
+        setFetched(data)
         // Keep checking while the payment settles or tickets are still being issued.
         const pending = data.status === 'processing' || data.tickets.some((t) => t.status === 'requested')
         if (pending) timer = setTimeout(load, data.status === 'processing' ? 2000 : 15000)
@@ -30,82 +34,87 @@ export default function Confirmation({ bookingId, onDone }) {
       stop = true
       clearTimeout(timer)
     }
-  }, [bookingId])
+  }, [bookingId, mock])
 
   if (error) return <Shell onDone={onDone}><div className="co-error">{error}</div></Shell>
   if (!booking) return <Shell onDone={onDone}><p className="co-hint">Loading your booking…</p></Shell>
 
-  const { quote, trip } = booking
-  const issued = booking.tickets.filter((t) => t.status === 'issued').length
-
   if (booking.status !== 'paid' && booking.status !== 'processing') {
     return (
       <Shell onDone={onDone}>
-        <div className="cf-hero bad">
+        <div className="cf-msg">
           <h1>Payment didn’t go through</h1>
-          <p>Nothing was charged and no tickets were booked. You can go back and try again with another payment method.</p>
+          <p>Nothing was charged and no tickets were booked. Go back and try again with another payment method.</p>
         </div>
       </Shell>
     )
   }
 
+  const paid = booking.status === 'paid'
+
   return (
     <Shell onDone={onDone}>
-      <div className={`cf-hero ${booking.status === 'paid' ? 'ok' : ''}`}>
-        <div className="cf-ref">Booking {booking.id}</div>
-        <h1>{booking.status === 'paid' ? `You’re going to ${trip.stops.at(-1).name}! 🎉` : 'Confirming your payment…'}</h1>
-        <p>
-          {booking.status === 'paid'
-            ? <>We received {money(quote.totalCents)}. Now we’re booking your {quote.tickets.length} tickets with {quote.operators.length} rail {quote.operators.length === 1 ? 'company' : 'companies'}; each e-ticket goes to <strong>{booking.email}</strong> as soon as it’s issued.</>
-            : 'Your bank is still confirming the payment. This page updates by itself.'}
-        </p>
-        {booking.receiptUrl && <a className="cf-receipt" href={booking.receiptUrl} target="_blank" rel="noreferrer">View payment receipt ↗</a>}
+      <div className="cf-msg">
+        <h1>{paid ? 'You’re all booked!' : 'Confirming your payment…'}</h1>
+        <p>{paid ? 'Show this pass in Hippity Hop to see every ticket for your trip.' : 'Your bank is still confirming. This page updates by itself.'}</p>
       </div>
-
-      {booking.status === 'paid' && (
-        <ol className="cf-steps">
-          <li className="done"><span>✓</span>Payment received</li>
-          <li className={issued === quote.tickets.length ? 'done' : 'now'}>
-            <span>{issued === quote.tickets.length ? '✓' : '2'}</span>Tickets issued by rail companies ({issued}/{quote.tickets.length})
-          </li>
-          <li className={issued === quote.tickets.length ? 'done' : ''}><span>3</span>E-tickets in your inbox</li>
-        </ol>
-      )}
-
-      <div className="cf-grid">
-        <div className="co-card">
-          <h2>Your tickets</h2>
-          <TicketList quote={{ ...quote, tickets: booking.tickets }} showStatus={booking.status === 'paid'} />
-        </div>
-        <div className="co-card">
-          <h2>Who you’ll hear from</h2>
-          <ul className="cf-ops">
-            {quote.operators.map((o) => (
-              <li key={o.operator}>
-                <OperatorBadge id={o.operator} />
-                <div>
-                  <strong>{OPERATORS[o.operator].name}</strong>
-                  <small>{o.tickets} {o.tickets === 1 ? 'ticket' : 'tickets'} · {OPERATORS[o.operator].delivery}</small>
-                </div>
-              </li>
-            ))}
-          </ul>
-          <h2>Travellers</h2>
-          <p className="cf-people">{booking.travellers.map((p) => `${p.firstName} ${p.lastName}`).join(', ')}</p>
-          <h2>What you paid</h2>
-          <PriceBreakdown quote={quote} />
-        </div>
-      </div>
+      <Pass booking={booking} />
+      <TicketWallet booking={booking} showStatus={paid} />
     </Shell>
+  )
+}
+
+// The one ticket that matters: the Hippity Hop pass. Its QR opens every train ticket in the app.
+function Pass({ booking }) {
+  const { trip, tickets } = booking
+  const first = tickets[0]
+  const last = tickets.at(-1)
+  return (
+    <article className="cf-pass">
+      <div className="cf-pass-main">
+        <img className="cf-pass-logo" src="/brand/hippity-hop-logo-primary.svg" alt="Hippity Hop" />
+        <div className="cf-pass-route">{trip.start} → {trip.stops.at(-1).name}</div>
+        <div className="cf-pass-meta">
+          {fmtDate(first.depart)} – {fmtDate(last.arrive)} · {trip.stops.length} {trip.stops.length === 1 ? 'stop' : 'stops'} · {tickets.length} {tickets.length === 1 ? 'train' : 'trains'}
+        </div>
+        <div className="cf-pass-ref">{booking.id}</div>
+      </div>
+      <div className="cf-pass-stub">
+        <QR value={booking.id} />
+        <small>Scan in Hippity Hop</small>
+      </div>
+    </article>
+  )
+}
+
+// A QR-style code drawn from the booking id. Placeholder until the app has real pass links.
+function QR({ value, size = 25 }) {
+  let h = 2166136261
+  for (const c of value) h = Math.imul(h ^ c.charCodeAt(0), 16777619)
+  const rand = () => ((h = Math.imul(h ^ (h >>> 15), 2246822507) ^ Math.imul(h ^ (h >>> 13), 3266489909)) >>> 0) / 4294967296
+  const finder = (x, y) => [[0, 0], [size - 7, 0], [0, size - 7]].some(([fx, fy]) => x >= fx - 1 && x <= fx + 7 && y >= fy - 1 && y <= fy + 7)
+  const cells = []
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) if (!finder(x, y) && rand() < 0.5) cells.push(`M${x} ${y}h1v1h-1z`)
+  const eye = (x, y) => (
+    <g key={`${x}-${y}`}>
+      <rect x={x} y={y} width="7" height="7" />
+      <rect x={x + 1} y={y + 1} width="5" height="5" fill="#fff" />
+      <rect x={x + 2} y={y + 2} width="3" height="3" />
+    </g>
+  )
+  return (
+    <svg className="cf-qr" viewBox={`-1 -1 ${size + 2} ${size + 2}`} role="img" aria-label="Pass QR code" shapeRendering="crispEdges">
+      <rect x="-1" y="-1" width={size + 2} height={size + 2} fill="#fff" />
+      <path d={cells.join('')} />
+      {eye(0, 0)}{eye(size - 7, 0)}{eye(0, size - 7)}
+    </svg>
   )
 }
 
 function Shell({ children, onDone }) {
   return (
-    <div className="checkout">
-      <header className="ov-head">
-        <div className="brand">🚆 Eurailo</div>
-        <div style={{ flex: 1 }} />
+    <div className="cf">
+      <header className="cf-head">
         <button className="ghost" onClick={onDone}>Plan another trip</button>
       </header>
       {children}

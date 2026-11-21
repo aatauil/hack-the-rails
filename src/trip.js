@@ -6,6 +6,12 @@ const RAIL_DETOUR = 1.2 // track is longer than the straight line
 const FLIGHT_KG_PER_KM = 0.25 // per passenger, short-haul incl. airport overhead
 const TRAIN_KG_PER_KM = { sustainable: 0.008, cheapest: 0.03, fastest: 0.02 }
 
+// Eurailo pushes the greenest trip: it is the default everywhere, and other options are opt-in.
+export const DEFAULT_OPTION = 'sustainable'
+
+// CO₂ (kg, per passenger) for `km` of rail on a given kind of train.
+export const trainKg = (km, optionId) => km * TRAIN_KG_PER_KM[optionId]
+
 export const OPTIONS = [
   {
     id: 'sustainable',
@@ -63,22 +69,35 @@ export const nightTrainPossible = (leg) => leg.km >= NIGHT_TRAIN.minKm
 // Key for a leg's chosen train, e.g. "Paris>Geneva".
 export const legKey = (from, to) => `${from}>${to}`
 
+// Fares follow demand: early and late trains are cheaper, rush-hour trains dearer.
+export function timeFactor(hour) {
+  if (hour >= 19) return 0.9
+  if (hour < 8) return 0.85
+  if (hour < 10 || (hour >= 17 && hour < 19)) return 1.15
+  return 1
+}
+
 // Build one option's timetable + totals for the chosen stops.
 // `departures` maps legKey -> "HH:MM" for legs where the traveller picked their own train;
-// other legs use the option's default departure time.
-export function planTrip(stops, option, startDate, start, departures = {}) {
+// other legs use the option's default departure time. `fares` maps legKey -> option id for legs
+// where they swapped to another kind of train (e.g. a saver train on one leg of a fast trip).
+export function planTrip(stops, option, startDate, start, departures = {}, fares = {}) {
   const legs = []
   let from = start
   let day = new Date(startDate)
   let totalKm = 0
   let totalMin = 0
+  let price = 0
+  let co2 = 0
 
   for (const stop of stops) {
+    const key = legKey(from.name, stop.name)
+    const opt = OPTIONS.find((o) => o.id === fares[key]) ?? option
     const km = haversineKm(from, stop) * RAIL_DETOUR
-    const minutes = Math.round(((km / option.speed) * 60 + 15 * (1 + option.changes)) / 5) * 5
+    const minutes = Math.round(((km / opt.speed) * 60 + 15 * (1 + opt.changes)) / 5) * 5
     const depart = new Date(day)
-    const picked = departures[legKey(from.name, stop.name)]
-    const [h, m] = picked ? picked.split(':').map(Number) : option.departAt
+    const picked = departures[key]
+    const [h, m] = picked ? picked.split(':').map(Number) : opt.departAt
     depart.setHours(h, m, 0, 0)
     let arrive = addMinutes(depart, minutes)
     const night = h >= 19 && km >= NIGHT_TRAIN.minKm
@@ -89,21 +108,22 @@ export function planTrip(stops, option, startDate, start, departures = {}) {
       if (arrive < morning) arrive = morning
     }
     const ride = Math.round((arrive - depart) / 60000)
-    legs.push({ from: from.name, to: stop.name, km, minutes: ride, depart, arrive, night })
+    const legPrice = Math.max(5, Math.round((km * opt.eurPerKm * timeFactor(h)) / 5) * 5)
+    legs.push({ from: from.name, to: stop.name, km, minutes: ride, depart, arrive, night, option: opt.id, price: legPrice, co2Kg: trainKg(km, opt.id) })
     totalKm += km
     totalMin += ride
+    price += legPrice
+    co2 += trainKg(km, opt.id)
     day = addDays(arrive, stop.days) // leave after N nights
     from = stop
   }
 
-  const price = Math.round((totalKm * option.eurPerKm) / 5) * 5
-  const trainKg = totalKm * TRAIN_KG_PER_KM[option.id]
   const flightKg = (totalKm / RAIL_DETOUR) * FLIGHT_KG_PER_KM
-  return { ...option, legs, totalKm, totalMin, price, co2Kg: trainKg, savedKg: flightKg - trainKg }
+  return { ...option, legs, totalKm, totalMin, price, co2Kg: co2, savedKg: flightKg - co2 }
 }
 
-export function planAll(stops, startDate, start, departures) {
-  const plans = OPTIONS.map((o) => planTrip(stops, o, startDate, start, departures))
+export function planAll(stops, startDate, start, departures, fares) {
+  const plans = OPTIONS.map((o) => planTrip(stops, o, startDate, start, departures, fares))
   const maxPrice = Math.max(...plans.map((p) => p.price))
   const maxMin = Math.max(...plans.map((p) => p.totalMin))
   return plans.map((p) => ({
@@ -195,7 +215,9 @@ export function compareWithFlying(plan, travellers = 1) {
 }
 
 export function formatKg(kg) {
-  return kg >= 1000 ? `${(kg / 1000).toFixed(1)} t` : `${Math.round(kg / 10) * 10} kg`
+  if (kg >= 1000) return `${(kg / 1000).toFixed(1)} t`
+  // Small amounts (one leg, one swap) to the kg, so a real difference never shows as "0 kg".
+  return kg < 100 ? `${Math.max(1, Math.round(kg))} kg` : `${Math.round(kg / 10) * 10} kg`
 }
 
 export function formatDuration(min) {

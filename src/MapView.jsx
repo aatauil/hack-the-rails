@@ -15,7 +15,7 @@ const ANIM_MS = 350
 
 const STYLE = 'https://tiles.openfreemap.org/styles/bright'
 const HOME = { center: [6.8, 47.6], zoom: 5, pitch: 0, bearing: 0 }
-const TEAL = '#0b7a6b'
+const TEAL = '#3A21A3' // brand accent (deep violet)
 
 const lineGeo = (coords) => ({
   type: 'Feature',
@@ -106,7 +106,7 @@ export default function MapView({ start, candidates, mode, onRelease, onToggle, 
       for (const id of ['railway', 'bridge-railway', 'tunnel-railway']) {
         if (!map.getLayer(id)) continue
         map.setLayerZoomRange(id, 0, 24)
-        map.setPaintProperty(id, 'line-color', '#9aa1a9')
+        map.setPaintProperty(id, 'line-color', '#8E82B0')
         map.setPaintProperty(id, 'line-width', ['interpolate', ['linear'], ['zoom'], 4, 0.6, 8, 1.2, 14, 2])
       }
 
@@ -125,7 +125,7 @@ export default function MapView({ start, candidates, mode, onRelease, onToggle, 
         source: 'rail-links',
         layout: { 'line-cap': 'round' },
         paint: {
-          'line-color': '#7d8590',
+          'line-color': '#6E5FA0',
           'line-width': ['interpolate', ['linear'], ['zoom'], 4, 1.2, 8, 2],
           'line-opacity': ['interpolate', ['linear'], ['zoom'], 7, 0.45, 9, 0],
           'line-dasharray': [3, 2],

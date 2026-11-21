@@ -3,7 +3,7 @@
 // amount Stripe charges is always computed from the same rules the customer saw.
 
 import { STATIONS } from './data.js'
-import { planTrip, OPTIONS } from './trip.js'
+import { planTrip, OPTIONS, legKey, trainKg, DEPARTURE_TIMES, NIGHT_TRAIN, nightTrainPossible } from './trip.js'
 import { PROVIDERS } from './providers.js'
 import { bestPassFare } from './passes.js'
 
@@ -140,15 +140,19 @@ function allocate(totalCents, weights) {
 }
 
 // Everything checkout needs: the tickets, who sells them, and what the customer pays.
-export function buildQuote({ start, startDate, stops, optionId, travellers, departures = {}, passes = [] }) {
+export function buildQuote({ start, startDate, stops, optionId, travellers, departures = {}, fares = {}, passes = [] }) {
   const option = OPTIONS.find((o) => o.id === optionId)
   const origin = byName[start]
-  const plan = planTrip(stops.map((s) => ({ ...byName[s.name], days: s.days })), option, new Date(`${startDate}T00:00:00`), origin, departures)
+  const plan = planTrip(stops.map((s) => ({ ...byName[s.name], days: s.days })), option, new Date(`${startDate}T00:00:00`), origin, departures, fares)
 
   const tickets = plan.legs.flatMap((leg, legIndex) =>
-    legTickets(leg, optionId).map((t, i, arr) => ({ ...t, legIndex, splitLeg: arr.length > 1, part: i })),
+    legTickets(leg, leg.option).map((t, i, arr) => ({ ...t, legIndex, fare: leg.option, splitLeg: arr.length > 1, part: i })),
   )
-  const perPerson = allocate(plan.price * 100, tickets.map((t) => t.km))
+  // Each leg's fare is shared across its tickets by distance.
+  const perPerson = plan.legs.flatMap((leg, i) => {
+    const own = tickets.filter((t) => t.legIndex === i)
+    return allocate(leg.price * 100, own.map((t) => t.km))
+  })
   const count = Math.max(1, travellers)
 
   const items = tickets.map((t, i) => {
@@ -158,7 +162,7 @@ export function buildQuote({ start, startDate, stops, optionId, travellers, depa
     const reservationCents = RESERVATION_CENTS[service] ?? 0
     // Passes and discount cards the traveller already holds.
     const fare = bestPassFare(
-      { operator: t.operator, service, kind, fromCountry: COUNTRY[t.from], toCountry: COUNTRY[t.to], saver: optionId === 'cheapest' },
+      { operator: t.operator, service, kind, fromCountry: COUNTRY[t.from], toCountry: COUNTRY[t.to], saver: t.fare === 'cheapest' },
       perPerson[i], reservationCents, passes,
     )
     return {
@@ -175,7 +179,8 @@ export function buildQuote({ start, startDate, stops, optionId, travellers, depa
       passReservationCents: reservationCents,
       splitLeg: t.splitLeg,
       changeAfter: t.splitLeg && t.part === 0 ? CHANGE_MINUTES : null,
-      conditions: CONDITIONS[optionId],
+      fare: t.fare,
+      conditions: CONDITIONS[t.fare],
       fullUnitCents: perPerson[i],
       unitCents: fare.cents,
       totalCents: fare.cents * count,
@@ -210,3 +215,47 @@ export function buildQuote({ start, startDate, stops, optionId, travellers, depa
 
 export const money = (cents) =>
   (cents / 100).toLocaleString('en-IE', { style: 'currency', currency: 'EUR', minimumFractionDigits: cents % 100 ? 2 : 0 })
+
+// Other trains the traveller could take for one leg instead: an earlier and a later train of
+// the same kind, and the other kinds of train at about the same time (plus a night train on
+// long legs). Each one is priced with the same maths as checkout, so the differences shown
+// are exactly what the total will change by.
+export function legAlternatives(trip, legIndex) {
+  const base = buildQuote({ ...trip, travellers: 1 })
+  const plan = planTrip(
+    trip.stops.map((s) => ({ ...byName[s.name], days: s.days })), OPTIONS.find((o) => o.id === trip.optionId),
+    new Date(`${trip.startDate}T00:00:00`), byName[trip.start], trip.departures ?? {}, trip.fares ?? {},
+  )
+  const leg = plan.legs[legIndex]
+  const key = legKey(leg.from, leg.to)
+  const hhmm = `${String(leg.depart.getHours()).padStart(2, '0')}:${String(leg.depart.getMinutes()).padStart(2, '0')}`
+  const day = DEPARTURE_TIMES.filter((t) => t !== NIGHT_TRAIN.departs)
+  const at = day.indexOf(hhmm)
+  const nearest = at >= 0 ? at : day.findIndex((t) => t > hhmm)
+
+  const picks = [{ time: hhmm, fare: leg.option }]
+  if (nearest > 0) picks.push({ time: day[nearest - 1], fare: leg.option })
+  if (nearest >= 0 && nearest < day.length - 1) picks.push({ time: day[at >= 0 ? at + 1 : nearest], fare: leg.option })
+  for (const o of OPTIONS) if (o.id !== leg.option) picks.push({ time: hhmm, fare: o.id })
+  if (nightTrainPossible(leg) && hhmm !== NIGHT_TRAIN.departs) picks.push({ time: NIGHT_TRAIN.departs, fare: leg.option })
+
+  const legCents = (q) => q.tickets.filter((t) => t.legIndex === legIndex).reduce((n, t) => n + t.totalCents, 0)
+  const baseCents = legCents(base)
+  const seen = new Set()
+  return picks.flatMap((p) => {
+    const id = `${p.fare}@${p.time}`
+    if (seen.has(id)) return []
+    seen.add(id)
+    const q = buildQuote({ ...trip, travellers: 1, departures: { ...trip.departures, [key]: p.time }, fares: { ...trip.fares, [key]: p.fare } })
+    const tickets = q.tickets.filter((t) => t.legIndex === legIndex)
+    const depart = new Date(tickets[0].depart)
+    const arrive = new Date(tickets[tickets.length - 1].arrive)
+    return [{
+      id, time: p.time, fare: p.fare, current: seen.size === 1,
+      tickets, depart, arrive, minutes: Math.round((arrive - depart) / 60000),
+      cents: legCents(q), deltaCents: legCents(q) - baseCents,
+      co2Kg: trainKg(leg.km, p.fare),
+      conditions: CONDITIONS[p.fare],
+    }]
+  })
+}

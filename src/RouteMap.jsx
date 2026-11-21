@@ -5,35 +5,44 @@ import maplibregl from 'maplibre-gl'
 // train. `hover` ({ type: 'stop' | 'leg', i }) is shared with the timeline and leg cards.
 
 const STYLE = 'https://tiles.openfreemap.org/styles/bright'
-const TEAL = '#0b7a6b'
-const NIGHT = '#5b3fb5'
+const TEAL = '#3A21A3' // brand accent (deep violet)
+const NIGHT = '#22124A' // brand midnight
 
 export const KIND_LABEL = { highspeed: 'High-speed', regional: 'Regional', night: 'Night train' }
 
 const empty = { type: 'FeatureCollection', features: [] }
 
-function pin(i, point) {
+function pin(i, point, label) {
   const el = document.createElement('div')
   el.className = `rm-pin ${i === 0 ? 'start' : ''}`
-  el.innerHTML = `<span class="rm-num">${i === 0 ? '🚂' : i}</span><span class="rm-name">${point.name}</span>`
+  const name = document.createElement('span')
+  name.className = 'rm-name'
+  name.textContent = point.name
+  if (label) {
+    const sub = document.createElement('b')
+    sub.textContent = label
+    name.append(sub)
+  }
+  el.innerHTML = `<span class="rm-num">${i === 0 ? '🚂' : i}</span>`
+  el.append(name)
   return el
 }
 
-export default function RouteMap({ points, segments, hover, onHover }) {
+export default function RouteMap({ points, segments, labels = [], hover, onHover, cooperative = true }) {
   const elRef = useRef(null)
   const mapRef = useRef(null)
   const markers = useRef([])
   const ready = useRef(false)
   const hoverRef = useRef(onHover)
   hoverRef.current = onHover
-  const data = useRef({ points, segments })
-  data.current = { points, segments }
+  const data = useRef({ points, segments, labels })
+  data.current = { points, segments, labels }
 
   // Draw (or redraw) the route and fit the camera to it.
   const draw = () => {
     const map = mapRef.current
     if (!map || !ready.current) return
-    const { points, segments } = data.current
+    const { points, segments, labels } = data.current
     map.getSource('route').setData({
       type: 'FeatureCollection',
       features: segments.map((s) => ({
@@ -44,7 +53,7 @@ export default function RouteMap({ points, segments, hover, onHover }) {
     })
     markers.current.forEach((m) => m.remove())
     markers.current = points.map((p, i) => {
-      const el = pin(i, p)
+      const el = pin(i, p, labels[i])
       el.addEventListener('mouseenter', () => hoverRef.current({ type: 'stop', i }))
       el.addEventListener('mouseleave', () => hoverRef.current(null))
       return new maplibregl.Marker({ element: el }).setLngLat([p.lng, p.lat]).addTo(map)
@@ -60,8 +69,8 @@ export default function RouteMap({ points, segments, hover, onHover }) {
     const b = new maplibregl.LngLatBounds()
     points.forEach((p) => b.extend([p.lng, p.lat]))
     const small = map.getContainer().clientHeight < 250
-    const pad = small ? 24 : 60
-    map.fitBounds(b, { padding: { top: pad, bottom: small ? 16 : 40, left: pad, right: pad }, maxZoom: 8, duration: 0 })
+    const pad = small ? 24 : 70
+    map.fitBounds(b, { padding: { top: pad, bottom: small ? 16 : 100, left: pad, right: pad }, maxZoom: 8, duration: 0 })
   }
 
   useEffect(() => {
@@ -73,13 +82,14 @@ export default function RouteMap({ points, segments, hover, onHover }) {
       attributionControl: { compact: true },
       dragRotate: false,
       pitchWithRotate: false,
-      cooperativeGestures: true,
+      cooperativeGestures: cooperative,
     })
+    if (!cooperative) map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right')
     mapRef.current = map
     map.on('load', () => {
       map.addSource('route', { type: 'geojson', data: empty })
       const base = { type: 'line', source: 'route', layout: { 'line-cap': 'round', 'line-join': 'round' } }
-      map.addLayer({ ...base, id: 'route-casing', paint: { 'line-color': '#fff', 'line-width': 9 } })
+      map.addLayer({ ...base, id: 'route-casing', paint: { 'line-color': '#FFF5E6', 'line-width': 9 } })
       map.addLayer({ ...base, id: 'route-hover', filter: ['==', ['get', 'leg'], -1], paint: { 'line-color': TEAL, 'line-width': 16, 'line-opacity': 0.25 } })
       map.addLayer({ ...base, id: 'route-highspeed', filter: ['==', ['get', 'kind'], 'highspeed'], paint: { 'line-color': TEAL, 'line-width': 5 } })
       map.addLayer({
@@ -102,11 +112,14 @@ export default function RouteMap({ points, segments, hover, onHover }) {
       draw()
       map.on('resize', fit)
     })
-    return () => map.remove()
+    return () => {
+      ready.current = false
+      map.remove()
+    }
   }, [])
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(draw, [points, segments])
+  useEffect(draw, [points, segments, labels.join('|')])
 
   // Reflect the shared hover on the map.
   useEffect(() => {

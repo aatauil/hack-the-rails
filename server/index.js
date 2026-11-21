@@ -10,6 +10,7 @@ import { STATIONS } from '../src/data.js'
 import { OPTIONS, DEPARTURE_TIMES, NIGHT_TRAIN } from '../src/trip.js'
 import { cleanPasses } from '../src/passes.js'
 import { getBooking, saveBooking, findByPaymentIntent } from './store.js'
+import { googleSaveUrl, applePass, WalletError } from './wallet.js'
 
 const PORT = Number(process.env.API_PORT ?? 8787)
 const { STRIPE_SECRET_KEY, STRIPE_PUBLISHABLE_KEY, STRIPE_WEBHOOK_SECRET } = process.env
@@ -114,6 +115,27 @@ app.get('/api/bookings/:id', async (req, res) => {
   res.json(publicBooking(booking))
 })
 
+// Add one train ride to Apple Wallet (.pkpass file) or Google Wallet (a save link).
+app.get('/api/bookings/:id/legs/:leg/wallet/:kind', async (req, res) => {
+  const booking = await getBooking(req.params.id)
+  if (!booking) return res.status(404).json({ error: 'Booking not found' })
+  if (booking.status !== 'paid') return res.status(409).json({ error: 'Wallet passes are ready once the payment is through.' })
+  const leg = Number(req.params.leg)
+  try {
+    if (req.params.kind === 'google') return res.json({ url: googleSaveUrl(booking, leg) })
+    if (req.params.kind === 'apple') {
+      const file = await applePass(booking, leg)
+      res.set({ 'Content-Type': 'application/vnd.apple.pkpass', 'Content-Disposition': `attachment; filename="${booking.id}-${leg + 1}.pkpass"` })
+      return res.send(file)
+    }
+    res.status(404).json({ error: 'Unknown wallet.' })
+  } catch (err) {
+    if (err instanceof WalletError) return res.status(err.status).json({ error: err.message })
+    console.error('Wallet pass error', err)
+    res.status(500).json({ error: 'Could not create the wallet pass.' })
+  }
+})
+
 // ---------- helpers ----------
 
 function newBooking() {
@@ -185,6 +207,12 @@ function validate(body) {
     const [from, to] = String(key).split('>')
     if (STATION_NAMES.has(from) && STATION_NAMES.has(to) && (DEPARTURE_TIMES.includes(time) || time === NIGHT_TRAIN.departs)) departures[key] = time
   }
+  // Optional kind of train per leg (one of the trip options); anything unexpected is dropped.
+  const fares = {}
+  for (const [key, fare] of Object.entries(trip.fares ?? {}).slice(0, 20)) {
+    const [from, to] = String(key).split('>')
+    if (STATION_NAMES.has(from) && STATION_NAMES.has(to) && OPTIONS.some((o) => o.id === fare)) fares[key] = fare
+  }
   if (!Array.isArray(travellers) || travellers.length < 1 || travellers.length > MAX_TRAVELLERS) {
     return { error: `Between 1 and ${MAX_TRAVELLERS} travellers per booking.` }
   }
@@ -197,12 +225,12 @@ function validate(body) {
   if (!EMAIL.test(mail)) return { error: 'Please enter a valid email address.' }
   // Passes and discount cards the travellers hold: unknown ids are dropped, and we reprice with them.
   const passes = cleanPasses(trip.passes)
-  return { trip: { start: trip.start, startDate: trip.startDate, optionId: trip.optionId, stops, departures, passes }, travellers: people, email: mail }
+  return { trip: { start: trip.start, startDate: trip.startDate, optionId: trip.optionId, stops, departures, fares, passes }, travellers: people, email: mail }
 }
 
 app.listen(PORT, () => {
   console.log(`Eurailo API on http://localhost:${PORT}`)
   if (!stripe) console.warn('⚠ STRIPE_SECRET_KEY is not set: checkout will show a setup message.')
-  else if (!STRIPE_SECRET_KEY.startsWith('sk_test_')) console.warn('⚠ Using a LIVE Stripe key: real cards will be charged.')
+  else if (!/^(sk|rk)_test_/.test(STRIPE_SECRET_KEY)) console.warn('⚠ Using a LIVE Stripe key: real cards will be charged.')
   if (!STRIPE_WEBHOOK_SECRET) console.warn('ℹ No STRIPE_WEBHOOK_SECRET: payment status is read from Stripe when the confirmation page loads.')
 })

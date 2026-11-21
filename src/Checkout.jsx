@@ -24,20 +24,27 @@ function useStripeConfig() {
 const APPEARANCE = {
   theme: 'stripe',
   variables: {
-    colorPrimary: '#0b7a6b',
-    colorText: '#111111',
-    fontFamily: 'Inter, system-ui, sans-serif',
-    borderRadius: '10px',
+    // Hippity Hop brand: violet accent, midnight ink, DM Sans
+    colorPrimary: '#3A21A3',
+    colorText: '#22124A',
+    colorBackground: '#FFFFFF',
+    fontFamily: '"DM Sans", system-ui, sans-serif',
+    borderRadius: '12px',
     spacingUnit: '4px',
   },
-  rules: { '.Input': { border: '1.5px solid #d4d4d4', boxShadow: 'none' }, '.Label': { fontWeight: '600' } },
+  rules: { '.Input': { border: '2px solid #22124A', boxShadow: 'none' }, '.Label': { fontWeight: '600' } },
 }
-const FONTS = [{ cssSrc: 'https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap' }]
+// Self-hosted brand font (public/fonts), loaded into Stripe's iframe from our own origin.
+const FONTS = [400, 700].map((weight) => ({
+  family: 'DM Sans',
+  weight: String(weight),
+  src: `url(${window.location.origin}/fonts/dm-sans-latin-${weight}-normal.woff2)`,
+}))
 
 const emptyTraveller = () => ({ firstName: '', lastName: '' })
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
 
-export default function Checkout({ start, startDate, stops, departures = {}, optionId, passes = [], onBack, onPaid }) {
+export default function Checkout({ start, startDate, stops, departures = {}, fares = {}, optionId, passes = [], onBack, onPaid }) {
   const config = useStripeConfig()
   const [travellers, setTravellers] = useState([emptyTraveller()])
   const [email, setEmail] = useState('')
@@ -53,9 +60,10 @@ export default function Checkout({ start, startDate, stops, departures = {}, opt
       optionId,
       stops: stops.map((s) => ({ name: s.name, days: s.days })),
       departures, // trains the traveller picked on the overview ("Paris>Geneva": "09:30")
+      fares, // kind of train they swapped to on some legs ("Paris>Geneva": "cheapest")
       passes, // passes and discount cards they hold; the server reprices with them too
     }),
-    [start, startDate, optionId, stops, departures, passes],
+    [start, startDate, optionId, stops, departures, fares, passes],
   )
   const quote = useMemo(() => buildQuote({ ...trip, travellers: travellers.length }), [trip, travellers.length])
 

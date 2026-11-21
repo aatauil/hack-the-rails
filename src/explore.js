@@ -83,6 +83,7 @@ export function bestMonth(months, cities) {
 // --- Destinations --------------------------------------------------------------------------
 const CHEAPEST = OPTIONS.find((o) => o.id === 'cheapest')
 const FASTEST = OPTIONS.find((o) => o.id === 'fastest')
+const GREENEST = OPTIONS.find((o) => o.id === 'sustainable')
 
 // Every city you could go next from `from`, cheapest first, with what it costs, how long the
 // train takes, whether that fits the trip length, and the weather when you would be there.
@@ -93,12 +94,15 @@ export function destinations({ from, exclude, length, months }) {
       const stop = [{ ...s, days: 1 }]
       const cheap = planTrip(stop, CHEAPEST, date, from)
       const fast = planTrip(stop, FASTEST, date, from)
+      // CO₂ is for the trip we book by default: the most sustainable trains.
+      const green = planTrip(stop, GREENEST, date, from)
       const best = bestMonth(months, [s.name])
       return {
         ...s,
         price: cheap.price,
         minutes: fast.totalMin,
-        savedKg: fast.savedKg,
+        savedKg: green.savedKg,
+        co2Kg: green.co2Kg,
         fits: fast.totalMin <= length.maxRideMin,
         weather: weather(s.name, best.month),
         months: months.map((m) => weather(s.name, m.month)),
