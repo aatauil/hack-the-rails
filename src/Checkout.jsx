@@ -92,8 +92,8 @@ export default function Checkout({ start, startDate, stops, departures = {}, far
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ trip, travellers, email: email.trim(), bookingId: payment?.bookingId }),
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Something went wrong.')
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error ?? 'We couldn’t start the payment. Please try again.')
       if (data.free) return onPaid(data.bookingId) // passes cover the whole trip
       setPayment({ ...data, signature })
     } catch (err) {
