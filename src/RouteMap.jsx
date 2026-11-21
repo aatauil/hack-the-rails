@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import maplibregl from 'maplibre-gl'
+import * as maplibregl from 'maplibre-gl'
 
 // The planned trip on a map: numbered stops joined by train lines, one style per kind of
 // train. `hover` ({ type: 'stop' | 'leg', i }) is shared with the timeline and leg cards.

@@ -3,6 +3,7 @@
 // STRIPE_PUBLISHABLE_KEY in .env; see .env.example.
 
 import express from 'express'
+import helmet from 'helmet'
 import Stripe from 'stripe'
 import { randomBytes } from 'node:crypto'
 import { buildQuote, MAX_TRAVELLERS } from '../src/tickets.js'
@@ -16,6 +17,10 @@ const { STRIPE_SECRET_KEY, STRIPE_PUBLISHABLE_KEY, STRIPE_WEBHOOK_SECRET } = pro
 const stripe = STRIPE_SECRET_KEY ? new Stripe(STRIPE_SECRET_KEY) : null
 
 const app = express()
+
+// Security headers (HSTS, nosniff, frame-ancestors, CSP, …) and no X-Powered-By.
+// The API only returns JSON, so helmet's strict defaults are fine.
+app.use(helmet())
 
 // ---------- Stripe webhook (needs the raw body, so it goes before express.json) ----------
 app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async (req, res) => {

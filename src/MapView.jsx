@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import maplibregl from 'maplibre-gl'
+import * as maplibregl from 'maplibre-gl'
 import { STATIONS, MONUMENTS, RAIL_LINKS } from './data.js'
 import { resample, smooth, closest, bend } from './geometry.js'
 import { project, unproject, kmPerPx } from './mercator.js'
